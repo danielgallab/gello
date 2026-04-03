@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gello REPL</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #1a1a1a;
+            color: #ffffff;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Consolas', monospace;
+            font-size: 14px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #repl-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 20px;
+        }
+
+        #output {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 10px;
+        }
+
+        .line {
+            padding: 2px 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .line.input {
+            color: #888888;
+        }
+
+        .line.output {
+            color: #ffffff;
+        }
+
+        .line.error {
+            color: #ff6b6b;
+        }
+
+        .line.welcome {
+            color: #4ecdc4;
+            margin-bottom: 10px;
+        }
+
+        #input-line {
+            display: flex;
+            align-items: center;
+            border-top: 1px solid #333333;
+            padding-top: 10px;
+            position: relative;
+        }
+
+        #prompt {
+            color: #4ecdc4;
+            margin-right: 8px;
+            user-select: none;
+        }
+
+        #input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #ffffff;
+            font-family: inherit;
+            font-size: inherit;
+            caret-color: #4ecdc4;
+            border: 2px solid transparent;
+            padding: 2px 4px;
+            margin: -2px -4px;
+            border-radius: 3px;
+            transition: border-color 0.3s ease;
+        }
+
+        #input::placeholder {
+            color: #555555;
+        }
+
+        #input.flash {
+            border-color: #4ecdc4;
+        }
+
+        #loading {
+            color: #888888;
+            padding: 20px 0;
+        }
+
+        /* Autocomplete dropdown */
+        #autocomplete {
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            background-color: #252525;
+            border: 1px solid #444444;
+            border-radius: 4px;
+            max-height: 180px;
+            overflow-y: auto;
+            display: none;
+            z-index: 100;
+            min-width: 150px;
+            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        #autocomplete.visible {
+            display: block;
+        }
+
+        .autocomplete-item {
+            padding: 6px 12px;
+            cursor: pointer;
+            color: #cccccc;
+        }
+
+        .autocomplete-item:hover,
+        .autocomplete-item.selected {
+            background-color: #3a3a3a;
+            color: #ffffff;
+        }
+
+        .autocomplete-item .keyword {
+            color: #ff79c6;
+        }
+
+        .autocomplete-item .builtin {
+            color: #8be9fd;
+        }
+
+        .autocomplete-item .user-defined {
+            color: #50fa7b;
+        }
+
+        /* Syntax reference panel */
+        #syntax-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            background-color: #2a2a2a;
+            border: 1px solid #444444;
+            border-radius: 8px;
+            color: #888888;
+            font-family: inherit;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            z-index: 200;
+        }
+
+        #syntax-toggle:hover {
+            background-color: #3a3a3a;
+            color: #ffffff;
+        }
+
+        #syntax-toggle.open {
+            color: #4ecdc4;
+        }
+
+        #syntax-toggle.open::after {
+            content: '';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 6px;
+            height: 6px;
+            background-color: #4ecdc4;
+            border-radius: 50%;
+        }
+
+        #syntax-panel {
+            position: fixed;
+            bottom: 70px;
+            right: 20px;
+            width: 280px;
+            max-height: 60vh;
+            background-color: #1e1e1e;
+            border: 1px solid #444444;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 150;
+            transform: translateY(20px);
+            opacity: 0;
+            visibility: hidden;
+            transition: transform 0.25s ease, opacity 0.25s ease, visibility 0.25s ease;
+        }
+
+        #syntax-panel.open {
+            transform: translateY(0);
+            opacity: 1;
+            visibility: visible;
+        }
+
+        #syntax-panel-content {
+            padding: 12px;
+            overflow-y: auto;
+            max-height: calc(60vh - 24px);
+            font-size: 12px;
+        }
+
+        .syntax-section {
+            margin-bottom: 16px;
+        }
+
+        .syntax-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .syntax-section h3 {
+            color: #888888;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #333333;
+        }
+
+        .syntax-snippet {
+            background-color: #252525;
+            padding: 8px 10px;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+
+        .syntax-snippet:last-child {
+            margin-bottom: 0;
+        }
+
+        .syntax-snippet:hover {
+            background-color: #333333;
+        }
+
+        .syntax-snippet:active {
+            background-color: #3a3a3a;
+        }
+
+        .syntax-snippet .kw {
+            color: #ff79c6;
+        }
+
+        .syntax-snippet .str {
+            color: #f1fa8c;
+        }
+
+        .syntax-snippet .num {
+            color: #bd93f9;
+        }
+
+        .syntax-snippet .comment {
+            color: #6272a4;
+        }
+
+        .syntax-snippet .op {
+            color: #8be9fd;
+        }
+
+        /* Responsive styles */
+        @media (max-width: 600px) {
+            #syntax-panel {
+                left: 10px;
+                right: 10px;
+                width: auto;
+                bottom: 70px;
+            }
+
+            #syntax-toggle {
+                right: 10px;
+                bottom: 10px;
+            }
+
+            #repl-container {
+                padding: 10px;
+                padding-bottom: 60px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="repl-container">
+        <div id="output">
+            <div id="loading">Loading Gello...</div>
+        </div>
+        <div id="input-line" style="display: none;">
+            <span id="prompt">&gt;</span>
+            <input type="text" id="input" autofocus autocomplete="off" spellcheck="false" placeholder="type code here...">
+            <div id="autocomplete"></div>
+        </div>
+    </div>
+
+    <button id="syntax-toggle" title="Syntax Reference">{ }</button>
+    <div id="syntax-panel">
+        <div id="syntax-panel-content"></div>
+    </div>
+
+    <script type="module">
+        import init, { run_gello } from './pkg/gello.js';
+
+        const output = document.getElementById('output');
+        const inputLine = document.getElementById('input-line');
+        const input = document.getElementById('input');
+        const loading = document.getElementById('loading');
+        const autocomplete = document.getElementById('autocomplete');
+        const syntaxToggle = document.getElementById('syntax-toggle');
+        const syntaxPanel = document.getElementById('syntax-panel');
+        const syntaxPanelContent = document.getElementById('syntax-panel-content');
+
+        // Session history - all lines submitted so far
+        let history = [];
+
+        // Autocomplete state
+        let autocompleteItems = [];
+        let autocompleteIndex = 0;
+        let autocompleteVisible = false;
+
+        // Keywords and builtins for autocomplete
+        const keywords = ['let', 'fn', 'return', 'if', 'else', 'while', 'print', 'true', 'false', 'null'];
+        const builtins = ['push'];
+
+        // Syntax reference content
+        const syntaxSections = [
+            {
+                title: 'Variables',
+                snippets: [
+                    'let x = 42',
+                    'let name = "gello"',
+                    'let flag = true'
+                ]
+            },
+            {
+                title: 'Functions',
+                snippets: [
+                    'fn add(a, b) { return a + b }',
+                    'let double = fn(n) { return n * 2 }'
+                ]
+            },
+            {
+                title: 'Control Flow',
+                snippets: [
+                    'if x > 0 { print "pos" }',
+                    'if x > 0 { print "yes" } else { print "no" }',
+                    'while x > 0 { print x\n  let x = x - 1 }'
+                ]
+            },
+            {
+                title: 'Closures',
+                snippets: [
+                    'fn make_adder(n) {\n  return fn(x) { return n + x }\n}\nlet add5 = make_adder(5)\nprint add5(3)   -- 8'
+                ]
+            },
+            {
+                title: 'Arrays',
+                snippets: [
+                    'let nums = [1, 2, 3]',
+                    'print nums[0]',
+                    'push(nums, 4)'
+                ]
+            },
+            {
+                title: 'Operators',
+                snippets: [
+                    '+ - * / %',
+                    '== != < <= > >=',
+                    '&& ||  !',
+                    '-- line comment'
+                ]
+            }
+        ];
+
+        function addLine(text, className) {
+            const line = document.createElement('div');
+            line.className = `line ${className}`;
+            line.textContent = text;
+            output.appendChild(line);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function runSession() {
+            // Combine all history lines into a single source
+            const source = history.join('\n');
+
+            // Run the full history through the interpreter
+            const result = run_gello(source);
+
+            return result;
+        }
+
+        function handleSubmit() {
+            const code = input.value;
+            input.value = '';
+            hideAutocomplete();
+
+            if (!code.trim()) {
+                return;
+            }
+
+            // Show the input line in the output
+            addLine(`> ${code}`, 'input');
+
+            // Get output before adding new line (to find delta)
+            const prevOutput = history.length > 0 ? run_gello(history.join('\n')) : '';
+
+            // Add to history
+            history.push(code);
+
+            // Run full session and get new output
+            const fullOutput = run_gello(history.join('\n'));
+
+            // Calculate the new output (delta)
+            let newOutput = fullOutput;
+            if (prevOutput && fullOutput.startsWith(prevOutput)) {
+                // Remove previous output to get just the new lines
+                newOutput = fullOutput.slice(prevOutput.length);
+                if (newOutput.startsWith('\n')) {
+                    newOutput = newOutput.slice(1);
+                }
+            }
+
+            // Display the new output
+            if (newOutput) {
+                const lines = newOutput.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('ERROR:')) {
+                        addLine(line.replace('ERROR: ', ''), 'error');
+                    } else {
+                        addLine(line, 'output');
+                    }
+                }
+            }
+        }
+
+        // Extract user-defined names from history
+        function getUserDefinedNames() {
+            const names = new Set();
+            const letRegex = /let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=/g;
+            const fnRegex = /fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+
+            const fullHistory = history.join('\n');
+
+            let match;
+            while ((match = letRegex.exec(fullHistory)) !== null) {
+                names.add(match[1]);
+            }
+            while ((match = fnRegex.exec(fullHistory)) !== null) {
+                names.add(match[1]);
+            }
+
+            return Array.from(names);
+        }
+
+        // Get the current word being typed
+        function getCurrentWord() {
+            const value = input.value;
+            const cursorPos = input.selectionStart;
+            const textBeforeCursor = value.slice(0, cursorPos);
+
+            // Find the start of the current word (after space, operator, or start)
+            const wordMatch = textBeforeCursor.match(/[a-zA-Z_][a-zA-Z0-9_]*$/);
+            if (wordMatch) {
+                return {
+                    word: wordMatch[0],
+                    start: cursorPos - wordMatch[0].length,
+                    end: cursorPos
+                };
+            }
+            return null;
+        }
+
+        // Get autocomplete suggestions
+        function getSuggestions(prefix) {
+            const suggestions = [];
+            const lowerPrefix = prefix.toLowerCase();
+
+            // Keywords (highest priority)
+            for (const kw of keywords) {
+                if (kw.toLowerCase().startsWith(lowerPrefix) && kw !== prefix) {
+                    suggestions.push({ text: kw, type: 'keyword' });
+                }
+            }
+
+            // Builtins
+            for (const bi of builtins) {
+                if (bi.toLowerCase().startsWith(lowerPrefix) && bi !== prefix) {
+                    suggestions.push({ text: bi, type: 'builtin' });
+                }
+            }
+
+            // User-defined names
+            const userNames = getUserDefinedNames();
+            for (const name of userNames) {
+                if (name.toLowerCase().startsWith(lowerPrefix) && name !== prefix) {
+                    suggestions.push({ text: name, type: 'user-defined' });
+                }
+            }
+
+            return suggestions;
+        }
+
+        // Show autocomplete dropdown
+        function showAutocomplete(suggestions) {
+            if (suggestions.length === 0) {
+                hideAutocomplete();
+                return;
+            }
+
+            autocompleteItems = suggestions.slice(0, 6);
+            autocompleteIndex = 0;
+
+            autocomplete.innerHTML = '';
+            autocompleteItems.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'autocomplete-item' + (index === 0 ? ' selected' : '');
+                div.innerHTML = `<span class="${item.type}">${escapeHtml(item.text)}</span>`;
+                div.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    completeWith(item.text);
+                });
+                autocomplete.appendChild(div);
+            });
+
+            autocomplete.classList.add('visible');
+            autocompleteVisible = true;
+        }
+
+        function hideAutocomplete() {
+            autocomplete.classList.remove('visible');
+            autocompleteVisible = false;
+            autocompleteItems = [];
+            autocompleteIndex = 0;
+        }
+
+        function updateAutocompleteSelection() {
+            const items = autocomplete.querySelectorAll('.autocomplete-item');
+            items.forEach((item, index) => {
+                item.classList.toggle('selected', index === autocompleteIndex);
+            });
+        }
+
+        function completeWith(text) {
+            const wordInfo = getCurrentWord();
+            if (wordInfo) {
+                const value = input.value;
+                const newValue = value.slice(0, wordInfo.start) + text + value.slice(wordInfo.end);
+                input.value = newValue;
+                input.selectionStart = input.selectionEnd = wordInfo.start + text.length;
+            }
+            hideAutocomplete();
+            input.focus();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Handle Tab for autocomplete
+        function handleTab(shiftKey) {
+            const wordInfo = getCurrentWord();
+            if (!wordInfo) {
+                return false;
+            }
+
+            const suggestions = getSuggestions(wordInfo.word);
+
+            if (suggestions.length === 0) {
+                return false;
+            }
+
+            if (suggestions.length === 1) {
+                // Single match - complete immediately
+                completeWith(suggestions[0].text);
+                return true;
+            }
+
+            // Multiple matches
+            if (!autocompleteVisible) {
+                showAutocomplete(suggestions);
+            } else {
+                // Navigate in dropdown
+                if (shiftKey) {
+                    autocompleteIndex = (autocompleteIndex - 1 + autocompleteItems.length) % autocompleteItems.length;
+                } else {
+                    autocompleteIndex = (autocompleteIndex + 1) % autocompleteItems.length;
+                }
+                updateAutocompleteSelection();
+            }
+            return true;
+        }
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                if (autocompleteVisible) {
+                    e.preventDefault();
+                    completeWith(autocompleteItems[autocompleteIndex].text);
+                } else {
+                    e.preventDefault();
+                    handleSubmit();
+                }
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                handleTab(e.shiftKey);
+            } else if (e.key === 'Escape') {
+                if (autocompleteVisible) {
+                    e.preventDefault();
+                    hideAutocomplete();
+                }
+            } else if (e.key === ' ' && autocompleteVisible) {
+                e.preventDefault();
+                completeWith(autocompleteItems[autocompleteIndex].text);
+                input.value += ' ';
+            }
+        });
+
+        // Update autocomplete on input
+        input.addEventListener('input', () => {
+            if (autocompleteVisible) {
+                const wordInfo = getCurrentWord();
+                if (wordInfo) {
+                    const suggestions = getSuggestions(wordInfo.word);
+                    showAutocomplete(suggestions);
+                } else {
+                    hideAutocomplete();
+                }
+            }
+        });
+
+        // Close autocomplete when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!autocomplete.contains(e.target) && e.target !== input) {
+                hideAutocomplete();
+            }
+            // Focus input when clicking in repl area
+            if (e.target.closest('#repl-container')) {
+                input.focus();
+            }
+        });
+
+        // Syntax panel functions
+        function highlightSnippet(code) {
+            // Simple syntax highlighting for known keywords
+            const keywordPattern = /\b(let|fn|return|if|else|while|print|true|false|null)\b/g;
+            const stringPattern = /"[^"]*"/g;
+            const numberPattern = /\b\d+\b/g;
+            const commentPattern = /--.*$/gm;
+            const operatorPattern = /([+\-*/%<>=!&|]+)/g;
+
+            // Escape HTML first
+            let html = escapeHtml(code);
+
+            // Replace patterns (order matters - comments first, then strings)
+            html = html.replace(commentPattern, '<span class="comment">$&</span>');
+            html = html.replace(stringPattern, '<span class="str">$&</span>');
+            html = html.replace(numberPattern, '<span class="num">$&</span>');
+            html = html.replace(keywordPattern, '<span class="kw">$1</span>');
+
+            return html;
+        }
+
+        function buildSyntaxPanel() {
+            let html = '';
+            for (const section of syntaxSections) {
+                html += `<div class="syntax-section">`;
+                html += `<h3>${escapeHtml(section.title)}</h3>`;
+                for (const snippet of section.snippets) {
+                    const highlighted = highlightSnippet(snippet);
+                    html += `<div class="syntax-snippet" data-snippet="${escapeHtml(snippet)}">${highlighted}</div>`;
+                }
+                html += `</div>`;
+            }
+            syntaxPanelContent.innerHTML = html;
+
+            // Add click handlers to snippets
+            syntaxPanelContent.querySelectorAll('.syntax-snippet').forEach(el => {
+                el.addEventListener('click', () => {
+                    const snippet = el.getAttribute('data-snippet');
+                    input.value = snippet;
+                    input.focus();
+                    // Flash the input
+                    input.classList.add('flash');
+                    setTimeout(() => input.classList.remove('flash'), 300);
+                });
+            });
+        }
+
+        function toggleSyntaxPanel() {
+            const isOpen = syntaxPanel.classList.toggle('open');
+            syntaxToggle.classList.toggle('open', isOpen);
+            localStorage.setItem('gello-syntax-panel-open', isOpen ? 'true' : 'false');
+        }
+
+        function initSyntaxPanel() {
+            buildSyntaxPanel();
+
+            // Restore panel state from localStorage
+            const savedState = localStorage.getItem('gello-syntax-panel-open');
+            if (savedState === 'true') {
+                syntaxPanel.classList.add('open');
+                syntaxToggle.classList.add('open');
+            }
+
+            syntaxToggle.addEventListener('click', toggleSyntaxPanel);
+        }
+
+        // Initialize WASM and start REPL
+        async function start() {
+            try {
+                await init();
+
+                // Remove loading message
+                loading.remove();
+
+                // Show welcome message
+                addLine('Gello 0.1.0 — try: print "hello, world!"', 'welcome');
+
+                // Show input line
+                inputLine.style.display = 'flex';
+                input.focus();
+
+                // Initialize syntax panel
+                initSyntaxPanel();
+            } catch (err) {
+                loading.textContent = `Failed to load: ${err.message}`;
+                loading.style.color = '#ff6b6b';
+            }
+        }
+
+        start();
+    </script>
+</body>
+</html>
