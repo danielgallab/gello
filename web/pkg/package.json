@@ -1,0 +1,15 @@
+{
+  "name": "gello",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "gello_bg.wasm",
+    "gello.js",
+    "gello.d.ts"
+  ],
+  "main": "gello.js",
+  "types": "gello.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
